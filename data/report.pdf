@@ -1,0 +1,120 @@
+---
+title: "EV Power - Lab 4 Project Report"
+format: pdf
+---
+
+# Example Solution 1
+
+## **Part 0: libraries**
+
+```{r}
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggplot2)
+```
+
+## **Part 1:** **Defining Research Question**
+
+Chosen Question: Are EV registrations concentrated in states with a higher percentage of renewable energy?
+
+## **Part 2: Data Preparation and Cleaning**
+
+```{r}
+# Data Loading
+
+# Renewable Energy Use by State and Year
+renew_2021 <- read_csv("renew_use_2021.csv")
+renew_2022 <- read_csv("renew_use_2022.csv")
+renew_2023 <- read_csv("renew_use_2023.csv")
+
+# Average Energy Price by State and Year
+energy_price <- read_csv("av_energy_price_2021-2023.csv")
+
+# Total Energy Use by State and Year
+total_2021 <- read_csv("total_energy_use_2021.csv")
+total_2022 <- read_csv("total_energy_use_2022.csv")
+total_2023 <- read_csv("total_energy_use_2023.csv")
+
+# EV Registrations by State (Only 2023)
+ev_registrations <- read_csv("ev-registrations-by_state_2023.csv")
+
+# Print a summary of the columns to see what needs cleaning
+print("Renewable Use 2023 Column Names:")
+print(names(renew_2023))
+print("EV Registrations Column Names:")
+print(names(ev_registrations))
+
+# Function to standardize column names (e.g., 'State/Region' -> 'state_region')
+clean_names <- function(data) {
+  # Get the current column names
+  col_names <- names(data)
+
+  # Use string manipulation to clean the names
+  new_names <- col_names %>%
+    # Convert to lowercase
+    str_to_lower() %>%
+    # Replace spaces with underscores
+    str_replace_all(" ", "_") %>%
+    # Remove special characters like parentheses, slashes, etc.
+    str_replace_all("[^a-z0-9_]", "") %>%
+    # Ensure no duplicate underscores
+    str_replace_all("__+", "_") %>%
+    # Remove leading/trailing underscores
+    str_replace_all("^_|_$", "")
+
+  # Apply the new names back to the data frame
+  names(data) <- new_names
+  return(data)
+}
+
+# Apply the cleaning function to all 2023 data frames
+renew_2023_clean <- clean_names(renew_2023)
+total_2023_clean <- clean_names(total_2023)
+ev_registrations_clean <- clean_names(ev_registrations)
+```
+
+## **Part 3: Joining / Pivoting Datasets for Analysis**
+
+```{r}
+renew_2023_data <- renew_2023_clean %>%
+    select(state, renew_use = value) %>%
+    filter(!is.na(state), state != "U.s.")
+
+total_2023_data <- total_2023_clean %>%
+    select(state, total_use = value) %>%
+  filter(!is.na(state), state != "U.s.")
+ev_2023_data <- ev_registrations_clean %>%
+    select(state, total_registrations) %>%
+  filter(!is.na(state))
+
+combined_energy_2023 <- inner_join(renew_2023_data, total_2023_data, by = "state")
+final_data_2023 <- inner_join(combined_energy_2023, ev_2023_data, by = "state")
+head(final_data_2023)
+
+final_data_for_map <- final_data_2023 %>%
+  mutate(percent_renewable = (renew_use / total_use) * 100)
+
+print("Final Data for Mapping (including calculated percent_renewable):")
+head(final_data_for_map)
+```
+
+## **Part 4: Mapping Visualization**
+
+```{r}
+us_states_map <- ne_states(country = "United States of America", returnclass = "sf")
+filter(!name %in% c("Alaska", "Hawaii", "Puerto Rico")) %>%
+    select(state = name, geometry)
+map_data_final <- us_states_map %>%
+  left_join(final_data_for_map, by = "state")
+
+ggplot(data = map_data_final) +
+    geom_sf(aes(fill = percent_renewable), color = "black", linewidth = 0.2) +
+    labs("Renewable Energy Share (%)")+
+    geom_sf(
+    data = map_data_final, 
+    aes(size = total_registrations), 
+    color = "darkgreen")
+```
